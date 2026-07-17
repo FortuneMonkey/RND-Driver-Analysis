@@ -7,3 +7,4 @@ fpdf2
 openpyxl
 python-docx
 reportlab
+xlrd
