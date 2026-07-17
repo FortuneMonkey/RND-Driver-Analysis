@@ -289,43 +289,30 @@ def compute_idle_events(raw_df, threshold_minutes=10, speed_threshold=1.0):
     return pd.DataFrame(events)
 
 
-def compute_savings_estimate(seg_df, target_kml, idle_minutes_total, idle_rate_lph=0.6, fuel_price=None, variance_km=None):
+def compute_savings_estimate(target_kml, idle_minutes_total, idle_rate_lph=0.6, fuel_price=None, variance_km=None):
     """
-    Estimate recoverable fuel from three independent sources:
-      1. Efficiency gap: liters actually used minus liters that *would* have
-         been used at the target km/L for the same distance (only counted
-         when actual efficiency is worse than target — a positive number
-         means fuel used beyond what the target implies).
-      2. Idle waste: total idle time (engine on, not moving) x an assumed
-         idle fuel-burn rate (liters/hour, editable — default 0.6 L/h is a
-         common rule-of-thumb for a light diesel vehicle at idle).
-      3. Distance discrepancy: if the logbook claims more km than GPS shows
-         (variance_km > 0), that overstated distance — if used to plan or
-         justify fuel — represents potentially over-claimed fuel, estimated
-         at the target km/L. Only counted when the logbook overstates (a
-         negative variance, GPS > logbook, isn't converted to "savings").
-    Returns a dict of all three components, their sum, and (if a fuel price
-    is given) the estimated cost of each.
+    Estimate recoverable fuel from two sources, both independent of refuel-cycle data:
+      1. Distance gap: if the logbook claims more km than GPS shows (variance_km > 0),
+         that overstated distance — if used to plan or justify fuel — represents
+         potentially over-claimed fuel, estimated at the target km/L. Only counted
+         when the logbook overstates (GPS > logbook isn't converted to "savings").
+      2. Idle waste: total idle time (engine on, not moving) x an assumed idle
+         fuel-burn rate (liters/hour, editable — default 0.6 L/h is a common
+         rule-of-thumb for a light diesel vehicle at idle).
+    Returns a dict of both components, their sum, and (if a fuel price is given)
+    the estimated cost of each.
     """
-    result = {"efficiency_gap_l": 0.0, "idle_waste_l": 0.0, "distance_gap_l": 0.0, "total_l": 0.0}
-    if seg_df is not None and not seg_df.empty and target_kml:
-        total_km = seg_df["km_gps"].fillna(seg_df["km_logbook"]).sum()
-        total_liters = seg_df["liters"].sum()
-        liters_at_target = total_km / target_kml if target_kml else 0
-        gap = total_liters - liters_at_target
-        result["efficiency_gap_l"] = max(gap, 0.0)
-
-    result["idle_waste_l"] = (idle_minutes_total / 60.0) * idle_rate_lph
+    result = {"distance_gap_l": 0.0, "idle_waste_l": 0.0, "total_l": 0.0}
 
     if variance_km is not None and target_kml:
         result["distance_gap_l"] = max(variance_km, 0.0) / target_kml
 
-    result["total_l"] = result["efficiency_gap_l"] + result["idle_waste_l"] + result["distance_gap_l"]
+    result["idle_waste_l"] = (idle_minutes_total / 60.0) * idle_rate_lph
+    result["total_l"] = result["distance_gap_l"] + result["idle_waste_l"]
 
     if fuel_price:
-        result["efficiency_gap_cost"] = result["efficiency_gap_l"] * fuel_price
-        result["idle_waste_cost"] = result["idle_waste_l"] * fuel_price
         result["distance_gap_cost"] = result["distance_gap_l"] * fuel_price
+        result["idle_waste_cost"] = result["idle_waste_l"] * fuel_price
         result["total_cost"] = result["total_l"] * fuel_price
 
     return result
@@ -666,7 +653,7 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, seg_df, pending_
     idle_events = compute_idle_events(raw_df, 10, 1.0) if raw_df is not None else pd.DataFrame()
     variance_km_val = (total_lb - total_gps) if total_gps is not None else None
     savings = compute_savings_estimate(
-        seg_df, target_kml,
+        target_kml,
         idle_events["duration_min"].sum() if not idle_events.empty else 0.0,
         idle_rate_lph, fuel_price, variance_km_val,
     )
@@ -690,10 +677,14 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, seg_df, pending_
         pdf.data_table(["Date", "Start", "End", "Duration (min)"], rows, col_widths=[45, 45, 45, 55])
 
     pdf.ln(3)
+    distance_gap_desc = (
+        f"({variance_km_val:,.0f} km / {target_kml:.1f} km/L target)" if variance_km_val is not None
+        else "(no GPS data to compute a distance gap for this vehicle)"
+    )
     savings_line = (
-        f"Estimated recoverable fuel: {savings['efficiency_gap_l']:,.0f} L from efficiency below target, "
+        f"Estimated recoverable fuel: {savings['distance_gap_l']:,.0f} L from the logbook-vs-GPS distance gap "
+        f"{distance_gap_desc}, "
         f"plus {savings['idle_waste_l']:,.0f} L from idle time (at {idle_rate_lph:.1f} L/hour assumed idle burn), "
-        f"plus {savings['distance_gap_l']:,.0f} L from the logbook-vs-GPS distance gap (at target km/L), "
         f"for a total estimate of {savings['total_l']:,.0f} L."
     )
     if fuel_price:
@@ -787,7 +778,7 @@ def build_fleet_pdf(vehicle_payloads):
         idle_evts = compute_idle_events(vp.get("raw_df"), 10, 1.0) if vp.get("raw_df") is not None else pd.DataFrame()
         idle_hrs = idle_evts["duration_min"].sum() / 60.0 if not idle_evts.empty else 0.0
         savings = compute_savings_estimate(
-            vp["seg_df"], vp["target_kml"], idle_evts["duration_min"].sum() if not idle_evts.empty else 0.0,
+            vp["target_kml"], idle_evts["duration_min"].sum() if not idle_evts.empty else 0.0,
             vp.get("idle_rate_lph", 0.6), vp.get("fuel_price"), var_km_val,
         )
 
@@ -1268,7 +1259,7 @@ with tab6:
             var_pct = (var_km / total_lb) if var_km is not None and total_lb else None
             avg_kml = (v_seg["km_gps"].fillna(v_seg["km_logbook"]).sum() / v_seg["liters"].sum()) if not v_seg.empty else None
 
-            v_savings = compute_savings_estimate(v_seg, v_target, v_idle_min, idle_rate, fuel_price or None, var_km)
+            v_savings = compute_savings_estimate(v_target, v_idle_min, idle_rate, fuel_price or None, var_km)
 
             overview_rows.append({
                 "Vehicle": v, "Logbook KM": total_lb, "GPS KM": total_gps,
@@ -1279,6 +1270,11 @@ with tab6:
             })
 
         overview_df = pd.DataFrame(overview_rows)
+        # Coerce to numeric so a mix of real numbers and Python None (from GPS-less
+        # vehicles) becomes proper NaN rather than staying as object dtype — abs()
+        # and other numeric ops fail on None but work fine on NaN.
+        for col in ["Logbook KM", "GPS KM", "Variance KM", "Variance %", "Avg km/L", "Target km/L", "Idle Hours", "Est. Savings (L)"]:
+            overview_df[col] = pd.to_numeric(overview_df[col], errors="coerce")
 
     if overview_df.empty:
         st.info("No vehicles with logbook data loaded yet.")
@@ -1291,8 +1287,8 @@ with tab6:
             f"is <b>{total_var_km:,.0f} km</b> and total idle time is <b>{total_idle_hrs:,.1f} hours</b>. "
             f"Estimated total recoverable fuel across the fleet: <b>{total_savings_l:,.0f} L</b>"
             + (f" (~{total_savings_l*fuel_price:,.0f} at your fuel price)" if fuel_price else "")
-            + " — combining efficiency below target, excess idle time, and the fuel implied by the distance gap "
-              "(at each vehicle's target km/L). This is an estimate, not an audit finding; use it to prioritize "
+            + " — combining the fuel implied by the distance gap (variance km / target km/L) and idle time "
+              "(idle hours x assumed burn rate). This is an estimate, not an audit finding; use it to prioritize "
               "which vehicles to look at first.</div>"
         )
         st.markdown(fleet_msg, unsafe_allow_html=True)
@@ -1352,7 +1348,7 @@ with tab6:
                 "Est. Savings (L)": st.column_config.NumberColumn(format="%.0f"),
             },
         )
-        st.caption("Est. Savings = fuel used beyond what the target km/L implies for the distance driven, + idle time x assumed idle burn rate, + the logbook-vs-GPS distance gap converted to liters at the target km/L. A rough prioritization estimate, not a precise audit figure.")
+        st.caption("Est. Savings = (Variance KM / Target km/L) + (Idle Hours x assumed idle burn rate). A rough prioritization estimate, not a precise audit figure.")
 
 with tab7:
     st.markdown("**Generate a report for this vehicle**")
