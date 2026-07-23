@@ -23,57 +23,75 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from fpdf import FPDF
 
-st.set_page_config(page_title="Fleet Telemetry Reconciliation", layout="wide", page_icon="🛰️")
+st.set_page_config(page_title="RND Driver Analysis", layout="wide", page_icon="🛰️")
 
 # ---------------------------------------------------------------------------
-# Styling — dark "fleet ops / telemetry console" theme
+# Color palette — light "fleet ops / telemetry console" theme.
+# Defined once here so the CSS below and every chart later in the file stay
+# in sync with a single source of truth.
 # ---------------------------------------------------------------------------
-st.markdown("""
+ACCENT = "#D9631E"   # logbook / brand accent (burnt orange, readable on white)
+CYAN = "#0E8C8A"     # GPS / secondary accent (deep teal)
+AMBER = "#B8790F"    # warning / HIGH variance
+GREEN = "#2E9E5B"    # OK / success
+RED = "#C0392B"      # alert / STANDBY
+DIM = "#6B7280"      # muted text/labels
+GRID = "#E3E6EA"     # gridlines / borders
+PANEL = "#FFFFFF"    # card/panel background
+BG = "#F7F7F5"       # page background
+TEXT = "#1F2328"     # primary text
+FLAG_COLORS = {"OK": GREEN, "HIGH": AMBER, "STANDBY": RED, "NO-GPS": DIM, "NO-LOGBOOK": "#9333EA"}
+FLAG_ICONS = {"OK": "✅", "HIGH": "⚠️", "STANDBY": "🚩", "NO-GPS": "❔", "NO-LOGBOOK": "👻"}
+
+# ---------------------------------------------------------------------------
+# Styling — light "fleet ops / telemetry console" theme
+# ---------------------------------------------------------------------------
+st.markdown(f"""
 <style>
-    .stApp { background-color: #12161a; }
-    section[data-testid="stSidebar"] { background-color: #171d23; border-right: 1px solid #2a323c; }
-    div[data-testid="stMetric"] {
-        background-color: #1a2027; border: 1px solid #2a323c; border-radius: 8px;
-        padding: 14px 16px 10px; border-left: 3px solid #ff7a33;
-    }
-    div[data-testid="stMetricLabel"] { color: #8b98a3 !important; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-    div[data-testid="stMetricValue"] { font-family: 'Courier New', monospace; color: #e7ecf0 !important; font-size: 1.7rem !important; }
-    div[data-testid="stMetricDelta"] { font-family: 'Courier New', monospace; }
-    h1, h2, h3 { color: #e7ecf0 !important; }
-    p, span, label, .stCaption { color: #c3ccd3; }
-    .stDataFrame { border: 1px solid #2a323c; border-radius: 8px; }
-    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #1a2027; border-radius: 6px 6px 0 0; padding: 8px 18px;
-        color: #8b98a3; border: 1px solid #2a323c; border-bottom: none;
-    }
-    .stTabs [aria-selected="true"] { color: #e7ecf0 !important; border-top: 2px solid #ff7a33; }
-    .insight-box {
-        background: linear-gradient(135deg, rgba(255,122,51,0.10), rgba(53,194,193,0.06));
-        border: 1px solid #2a323c; border-left: 3px solid #ff7a33;
-        border-radius: 8px; padding: 14px 18px; margin-bottom: 6px;
-        font-size: 14px; line-height: 1.65;
-    }
-    .insight-box b { color: #e7ecf0; }
-    .badge {
+    .stApp {{ background-color: {BG}; }}
+    section[data-testid="stSidebar"] {{ background-color: #FFFFFF; border-right: 1px solid {GRID}; }}
+    div[data-testid="stMetric"] {{
+        background-color: {PANEL}; border: 1px solid {GRID}; border-radius: 10px;
+        padding: 14px 16px 10px; border-left: 3px solid {ACCENT};
+        box-shadow: 0 1px 2px rgba(20,20,20,0.04);
+    }}
+    div[data-testid="stMetricLabel"] {{ color: {DIM} !important; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }}
+    div[data-testid="stMetricValue"] {{ font-family: 'Courier New', monospace; color: {TEXT} !important; font-size: 1.7rem !important; }}
+    div[data-testid="stMetricDelta"] {{ font-family: 'Courier New', monospace; }}
+    h1, h2, h3 {{ color: {TEXT} !important; }}
+    p, span, label, .stCaption {{ color: #45494F; }}
+    .stDataFrame {{ border: 1px solid {GRID}; border-radius: 10px; overflow: hidden; }}
+    .stTabs [data-baseweb="tab-list"] {{ gap: 4px; border-bottom: 1px solid {GRID}; }}
+    .stTabs [data-baseweb="tab"] {{
+        background-color: #FBFBFA; border-radius: 8px 8px 0 0; padding: 8px 18px;
+        color: {DIM}; border: 1px solid {GRID}; border-bottom: none;
+    }}
+    .stTabs [aria-selected="true"] {{
+        color: {TEXT} !important; background-color: {PANEL} !important;
+        border-top: 2px solid {ACCENT}; font-weight: 600;
+    }}
+    .insight-box {{
+        background: linear-gradient(135deg, rgba(217,99,30,0.07), rgba(14,140,138,0.05));
+        border: 1px solid {GRID}; border-left: 3px solid {ACCENT};
+        border-radius: 10px; padding: 14px 18px; margin-bottom: 6px;
+        font-size: 14px; line-height: 1.65; color: {TEXT};
+        box-shadow: 0 1px 2px rgba(20,20,20,0.03);
+    }}
+    .insight-box b {{ color: {TEXT}; }}
+    .badge {{
         display:inline-block; padding: 2px 10px; border-radius: 20px;
         font-size: 11px; font-weight: 600; font-family: 'Courier New', monospace;
-    }
-    hr { border-color: #2a323c !important; }
-    div[data-testid="stFileUploaderDropzone"] { background-color: #1a2027; border-color: #2a323c; }
+    }}
+    hr {{ border-color: {GRID} !important; }}
+    div[data-testid="stFileUploaderDropzone"] {{ background-color: #FBFBFA; border-color: {GRID}; }}
+    .stButton button, .stDownloadButton button {{
+        border-radius: 8px; border: 1px solid {GRID};
+    }}
+    .stButton button[kind="primary"], .stDownloadButton button[kind="primary"] {{
+        background-color: {ACCENT}; border-color: {ACCENT};
+    }}
 </style>
 """, unsafe_allow_html=True)
-
-ACCENT = "#ff7a33"
-CYAN = "#35c2c1"
-AMBER = "#f2a93b"
-GREEN = "#4caf6d"
-RED = "#e1523d"
-DIM = "#8b98a3"
-GRID = "#2a323c"
-PANEL = "#1a2027"
-FLAG_COLORS = {"OK": GREEN, "HIGH": AMBER, "STANDBY": RED, "NO-GPS": DIM, "NO-LOGBOOK": "#c026d3"}
-FLAG_ICONS = {"OK": "✅", "HIGH": "⚠️", "STANDBY": "🚩", "NO-GPS": "❔", "NO-LOGBOOK": "👻"}
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +194,10 @@ def compute_reconciliation(lb_df, gps_df):
     merged["variance_pct"] = merged.apply(
         lambda r: (r["variance_km"] / r["Jumlah_Pemakaian"])
         if pd.notna(r["Jumlah_Pemakaian"]) and r["Jumlah_Pemakaian"] != 0 and pd.notna(r["gps_km"])
-        else None,
-        axis=1,
+        else float("nan"),  # proper NaN, not None — keeps this a numeric dtype column so
+        axis=1,              # .abs() and other numeric ops downstream never break on it
     )
+    merged["variance_pct"] = pd.to_numeric(merged["variance_pct"], errors="coerce")
 
     def flag(r):
         if pd.isna(r["Jumlah_Pemakaian"]):
@@ -190,7 +209,7 @@ def compute_reconciliation(lb_df, gps_df):
             return "NO-GPS"
         if r["Jumlah_Pemakaian"] == 0 and r["gps_km"] > 1:
             return "STANDBY"
-        if r["variance_pct"] is not None and abs(r["variance_pct"]) > 0.15:
+        if r["variance_pct"] is not None and abs(r["variance_pct"]) > 0.1:
             return "HIGH"
         return "OK"
 
@@ -199,62 +218,40 @@ def compute_reconciliation(lb_df, gps_df):
 
 
 
-def compute_fuel_segments(data):
+def compute_fuel_overview(data, target_kml):
     """
-    Compute distance-per-refuel ('full-to-full') fuel efficiency segments.
-    Each segment = km driven since the previous refuel, divided by the liters
-    added at the closing refuel. The trailing km since the last refuel (with
-    no closing fill yet) is returned separately as 'pending'.
+    Cycle-free fuel overview. Instead of segmenting by refuel event (which
+    assumes every fill-up tops the tank to exactly full — noisy with few
+    fill-ups or partial fills), this just uses two totals over the whole
+    period: total liters refueled and total km driven (GPS-preferred, else
+    logbook). The only assumption left is the tank level at the very start
+    and end of the period, a small, fixed edge-effect rather than compounding
+    per-fill-up noise.
+
+    Also returns a day-by-day cumulative comparison — cumulative liters
+    actually used vs. cumulative liters implied by the target km/L for the
+    distance driven so far — so you can see the gap trend smoothly over time
+    instead of in noisy discrete per-cycle jumps.
     """
-    d = data.sort_values("Date").reset_index(drop=True)
-    segments = []
-    seg_lb_km, seg_gps_km, seg_gps_valid = 0.0, 0.0, True
-    period_start = d["Date"].iloc[0] if len(d) else None
+    d = data.sort_values("Date").reset_index(drop=True).copy()
+    d["km_best"] = d["gps_km"].fillna(d["Jumlah_Pemakaian"])
+    d["liters_refueled"] = d["Refuel_L"].fillna(0)
 
-    for _, row in d.iterrows():
-        seg_lb_km += row["Jumlah_Pemakaian"] or 0
-        if pd.notna(row.get("gps_km")):
-            seg_gps_km += row["gps_km"]
-        else:
-            seg_gps_valid = False
+    total_liters = d["liters_refueled"].sum()
+    total_km = d["km_best"].sum()
+    avg_kml = (total_km / total_liters) if total_liters > 0 else None
 
-        refuel = row.get("Refuel_L")
-        if pd.notna(refuel) and refuel > 0:
-            segments.append({
-                "period": f"{period_start} → {row['Date']}",
-                "liters": refuel,
-                "km_logbook": seg_lb_km,
-                "km_gps": seg_gps_km if seg_gps_valid else None,
-                "kml_logbook": seg_lb_km / refuel if refuel else None,
-                "kml_gps": (seg_gps_km / refuel) if (refuel and seg_gps_valid) else None,
-            })
-            seg_lb_km, seg_gps_km, seg_gps_valid = 0.0, 0.0, True
-            period_start = None  # set on next iteration below
+    d["cum_liters"] = d["liters_refueled"].cumsum()
+    d["cum_km"] = d["km_best"].cumsum()
+    d["cum_liters_at_target"] = (d["cum_km"] / target_kml) if target_kml else None
+    d["gap_l"] = d["cum_liters"] - d["cum_liters_at_target"] if target_kml else None
 
-        if period_start is None:
-            period_start = row["Date"]
-
-    pending_km = seg_lb_km if seg_lb_km > 0 else None
-    seg_df = pd.DataFrame(segments)
-
-    if not seg_df.empty:
-        # Prefer GPS-based efficiency where available, else fall back to logbook
-        seg_df["kml_best"] = seg_df["kml_gps"].where(seg_df["kml_gps"].notna(), seg_df["kml_logbook"])
-
-    return seg_df, pending_km
-
-
-def apply_fuel_targets(seg_df, target_kml, tolerance_pct):
-    """Add deviation_pct and fuel_flag columns based on a target km/L and tolerance band."""
-    if seg_df is None or seg_df.empty:
-        return seg_df
-    seg_df = seg_df.copy()
-    tol = tolerance_pct / 100.0
-    seg_df["deviation_pct"] = (seg_df["kml_best"] - target_kml) / target_kml
-    seg_df["fuel_flag"] = seg_df["deviation_pct"].apply(
-        lambda v: "BELOW TARGET" if v < -tol else ("ABOVE TARGET" if v > tol else "OK")
-    )
-    return seg_df
+    return {
+        "total_liters": total_liters,
+        "total_km": total_km,
+        "avg_kml": avg_kml,
+        "daily": d[["Date", "liters_refueled", "km_best", "cum_liters", "cum_km", "cum_liters_at_target", "gap_l"]],
+    }
 
 
 def compute_idle_events(raw_df, threshold_minutes=10, speed_threshold=1.0):
@@ -352,7 +349,7 @@ def build_insight(data, total_lb, total_gps, overall_var, flagged):
     if len(high):
         worst = high.loc[high["variance_km"].abs().idxmax()]
         lines.append(
-            f"<b>{len(high)} day(s)</b> exceed the 15% variance threshold — biggest gap on "
+            f"<b>{len(high)} day(s)</b> exceed the 10% variance threshold — biggest gap on "
             f"<b>{worst['Date']}</b> ({worst['Jumlah_Pemakaian']:.0f} km logged vs {worst['gps_km']:.1f} km GPS)."
         )
 
@@ -363,8 +360,8 @@ def build_insight(data, total_lb, total_gps, overall_var, flagged):
 # Report generation (PDF) — print-friendly light theme, separate from the
 # dark on-screen dashboard.
 # ---------------------------------------------------------------------------
-RPT_LB = "#e8703a"   # logbook (printed slightly darker than screen orange for contrast on white)
-RPT_GPS = "#1f9e9c"  # gps
+RPT_LB = ACCENT      # logbook (matches on-screen brand accent)
+RPT_GPS = CYAN        # gps (matches on-screen brand accent)
 RPT_GRID = "#dddddd"
 RPT_TEXT = "#222222"
 
@@ -449,17 +446,79 @@ def render_cumulative_chart_png(dates_str, cum_lb, cum_gps):
     return _fig_to_png_bytes(fig)
 
 
-def render_fuel_chart_png(periods, kml_vals, target_kml, flags):
-    colors = {"BELOW TARGET": "#c0392b", "ABOVE TARGET": "#d68910", "OK": RPT_GPS}
+def render_fuel_gap_chart_png(dates_str, daily_gap_l, cum_gap_l):
+    fig, ax = plt.subplots(figsize=(7.5, 3.0))
+    bars = ax.bar(range(len(dates_str)), daily_gap_l, color=RPT_LB, label="Daily fuel-equivalent gap (L)")
+    ax.bar_label(bars, fmt=lambda v: f"{v:.1f}" if v == v and v != 0 else "", fontsize=6.5, padding=1)
+    ax2 = ax.twinx()
+    ax2.plot(range(len(dates_str)), cum_gap_l, color=RPT_GPS, marker="o", markersize=3, linewidth=2,
+              linestyle="--", label="Cumulative (L)")
+    ax.set_xticks(range(len(dates_str)))
+    ax.set_xticklabels(dates_str, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Daily fuel-equivalent (L)")
+    ax2.set_ylabel("Cumulative (L)")
+    ax.margins(y=0.15)
+    ax.grid(axis="y", color=RPT_GRID, linewidth=0.6)
+    ax.set_axisbelow(True)
+    for spine in ["top"]:
+        ax.spines[spine].set_visible(False)
+        ax2.spines[spine].set_visible(False)
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, frameon=False, fontsize=8, loc="upper left")
+    fig.tight_layout()
+    return _fig_to_png_bytes(fig)
+
+
+def render_flag_donut_png(flag_counts):
+    """flag_counts: dict like {'OK': 10, 'HIGH': 3, ...}"""
+    colors_map = {"OK": GREEN, "HIGH": AMBER, "STANDBY": RED, "NO-GPS": DIM, "NO-LOGBOOK": "#9333EA"}
+    labels = list(flag_counts.keys())
+    values = list(flag_counts.values())
+    fig, ax = plt.subplots(figsize=(4.2, 3.4))
+    wedges, _ = ax.pie(
+        values, colors=[colors_map.get(k, RPT_GRID) for k in labels],
+        startangle=90, wedgeprops=dict(width=0.42, edgecolor="white", linewidth=2),
+    )
+    ax.legend(wedges, [f"{k} ({v})" for k, v in zip(labels, values)],
+              loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False, fontsize=8)
+    ax.text(0, 0, f"{sum(values)}\ndays", ha="center", va="center", fontsize=12, color=RPT_TEXT)
+    fig.tight_layout()
+    return _fig_to_png_bytes(fig)
+
+
+def render_idle_daily_chart_png(dates_str, idle_minutes):
     fig, ax = plt.subplots(figsize=(7.5, 2.8))
-    bar_colors = [colors[f] for f in flags]
-    bars = ax.bar(range(len(periods)), kml_vals, color=bar_colors)
-    ax.bar_label(bars, fmt="%.1f", fontsize=7, padding=2)
-    ax.axhline(target_kml, color="#333333", linestyle="--", linewidth=1.2)
-    ax.text(len(periods) - 0.5, target_kml, f" target {target_kml:.1f}", fontsize=8, va="bottom")
-    ax.set_xticks(range(len(periods)))
-    ax.set_xticklabels([f"cycle {i+1}" for i in range(len(periods))], fontsize=8)
-    ax.set_ylabel("km/L")
+    bars = ax.bar(range(len(dates_str)), idle_minutes, color=AMBER)
+    ax.bar_label(bars, fmt="%.0f", fontsize=7, padding=2)
+    ax.set_xticks(range(len(dates_str)))
+    ax.set_xticklabels(dates_str, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Idle minutes")
+    ax.margins(y=0.15)
+    ax.grid(axis="y", color=RPT_GRID, linewidth=0.6)
+    ax.set_axisbelow(True)
+    for spine in ["top", "right"]:
+        ax.spines[spine].set_visible(False)
+    fig.tight_layout()
+    return _fig_to_png_bytes(fig)
+
+
+def render_fleet_bar_png(vehicle_names, values_a, values_b=None, label_a="", label_b="", ylabel=""):
+    fig, ax = plt.subplots(figsize=(7.5, 3.2))
+    x = range(len(vehicle_names))
+    if values_b is not None:
+        w = 0.38
+        bars_a = ax.bar([i - w/2 for i in x], values_a, width=w, color=RPT_LB, label=label_a)
+        bars_b = ax.bar([i + w/2 for i in x], values_b, width=w, color=RPT_GPS, label=label_b)
+        ax.bar_label(bars_a, fmt="%.0f", fontsize=6.5, padding=1)
+        ax.bar_label(bars_b, fmt=lambda v: f"{v:.0f}" if v == v else "", fontsize=6.5, padding=1)
+        ax.legend(frameon=False, fontsize=8, loc="upper right")
+    else:
+        bars = ax.bar(list(x), values_a, color=AMBER)
+        ax.bar_label(bars, fmt="%.0f", fontsize=7, padding=2)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(vehicle_names, fontsize=8, rotation=15, ha="right")
+    ax.set_ylabel(ylabel)
     ax.margins(y=0.15)
     ax.grid(axis="y", color=RPT_GRID, linewidth=0.6)
     ax.set_axisbelow(True)
@@ -479,7 +538,7 @@ class ReportPDF(FPDF):
             return
         self.set_font("Helvetica", "B", 9)
         self.set_text_color(140, 140, 140)
-        self.cell(0, 8, "Fleet Logbook <-> GPS Reconciliation Report", align="L")
+        self.cell(0, 8, "Driver Logbook <-> GPS Tracker Report", align="L")
         self.cell(0, 8, dt.datetime.now().strftime("Generated %Y-%m-%d %H:%M"), align="R", ln=True)
         self.set_draw_color(220, 220, 220)
         self.line(10, 18, 200, 18)
@@ -566,7 +625,7 @@ class ReportPDF(FPDF):
             fill = not fill
 
 
-def build_vehicle_report_section(pdf: "ReportPDF", plate, data, seg_df, pending_km, target_kml, tolerance_pct,
+def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tolerance_pct,
                                   raw_df=None, idle_rate_lph=0.6, fuel_price=None):
     dates_str = data["Date"].astype(str)
     total_lb = data["Jumlah_Pemakaian"].sum()
@@ -604,7 +663,7 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, seg_df, pending_
             str(r["Date"]),
             f"{r['Jumlah_Pemakaian']:.0f}" if pd.notna(r["Jumlah_Pemakaian"]) else "-",
             f"{r['gps_km']:.1f}" if pd.notna(r["gps_km"]) else "-",
-            f"{r['variance_pct']*100:.0f}%" if pd.notna(r["variance_pct"]) else "-",
+            f"{abs(r['variance_pct'])*100:.0f}%" if pd.notna(r["variance_pct"]) else "-",
             f"{r['max_speed']:.0f}" if pd.notna(r["max_speed"]) else "-",
             r["flag"],
         ])
@@ -612,43 +671,40 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, seg_df, pending_
         ["Date", "Logbook KM", "GPS KM", "Var %", "Max Spd", "Flag"],
         rows, col_widths=[30, 30, 28, 25, 27, 50],
     )
+    pdf.ln(2)
+    pdf.body_text("Note: Var % is shown as an absolute value. Logbook KM x Var % = the gap between Logbook and GPS, in km. See the KM columns for which side is higher.")
 
-    if seg_df is not None and not seg_df.empty:
+    if total_gps is not None:
         pdf.add_page()
         pdf.section_title(f"{plate} — Fuel Analysis")
-        total_liters = seg_df["liters"].sum()
-        overall_kml = (seg_df["km_gps"].sum() / total_liters) if seg_df["km_gps"].notna().any() else (seg_df["km_logbook"].sum() / total_liters)
-        overall_vs_target = (overall_kml - target_kml) / target_kml if target_kml else None
-        below = (seg_df["fuel_flag"] == "BELOW TARGET").sum() if "fuel_flag" in seg_df else 0
+        km_gap = total_lb - total_gps
+        est_savings_l = max(km_gap, 0) / target_kml if target_kml else 0.0
+        total_refuel_l = data["Refuel_L"].fillna(0).sum()
 
         pdf.kpi_row([
-            ("TOTAL REFUELED", f"{total_liters:,.0f} L"),
-            ("AVG EFFICIENCY", f"{overall_kml:,.1f} km/L"),
+            ("TOTAL REFUELED", f"{total_refuel_l:,.0f} L"),
+            ("KM GAP", f"{km_gap:,.0f} km"),
             ("TARGET", f"{target_kml:.1f} km/L"),
-            ("VS TARGET", f"{overall_vs_target*100:+.0f}%" if overall_vs_target is not None else "-"),
-            ("BELOW TARGET", f"{below} / {len(seg_df)}"),
+            ("EST. FUEL IMPACT", f"{est_savings_l:,.0f} L"),
         ])
 
-        kml_col = "kml_gps" if seg_df["kml_gps"].notna().any() else "kml_logbook"
-        flags = seg_df["fuel_flag"] if "fuel_flag" in seg_df else ["OK"] * len(seg_df)
-        png3 = render_fuel_chart_png(seg_df["period"].tolist(), seg_df[kml_col].tolist(), target_kml, flags.tolist())
-        pdf.image_from_bytes(png3)
-
-        rows = []
-        for _, r in seg_df.iterrows():
-            rows.append([
-                r["period"], f"{r['liters']:.0f}",
-                f"{r['km_logbook']:.0f}",
-                f"{r['km_gps']:.1f}" if pd.notna(r["km_gps"]) else "-",
-                f"{r[kml_col]:.1f}",
-                r.get("fuel_flag", "-"),
-            ])
-        pdf.data_table(
-            ["Period", "Liters", "Logbook KM", "GPS KM", "km/L", "Flag"],
-            rows, col_widths=[55, 22, 30, 28, 22, 33],
+        fuel_insight = (
+            f"Simple estimate: the logbook-vs-GPS KM gap is {km_gap:,.0f} km "
+            f"({total_lb:,.0f} km logged vs {total_gps:,.0f} km GPS). At a target of {target_kml:.1f} km/L, "
+            f"that gap is worth roughly {est_savings_l:,.0f} L of fuel"
+            + (" - worth checking if that distance is being fueled but not actually driven."
+               if km_gap > 0 else ", though GPS shows more distance than logged here, so there's no fuel implied by this gap.")
         )
-        if pending_km:
-            pdf.body_text(f"Note: {pending_km:.0f} km driven since the last refuel, awaiting a closing fill-up (not included above).")
+        pdf.body_text(fuel_insight)
+
+        daily_gap_km = (data["Jumlah_Pemakaian"] - data["gps_km"]).clip(lower=0)
+        daily_gap_l = (daily_gap_km / target_kml) if target_kml else daily_gap_km * 0
+        cum_gap_l = daily_gap_l.cumsum()
+        dates_str_fuel = data["Date"].astype(str).str[5:]
+
+        png3 = render_fuel_gap_chart_png(dates_str_fuel, daily_gap_l, cum_gap_l)
+        pdf.image_from_bytes(png3)
+        pdf.body_text("Estimate = max(Logbook KM - GPS KM, 0) / Target km/L. No refuel-cycle assumptions, no actual liters tracked - just what the distance gap would cost in fuel at the target efficiency.")
 
     idle_events = compute_idle_events(raw_df, 10, 1.0) if raw_df is not None else pd.DataFrame()
     variance_km_val = (total_lb - total_gps) if total_gps is not None else None
@@ -662,16 +718,29 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, seg_df, pending_
     pdf.section_title(f"{plate} — Idle Time & Savings Estimate")
 
     if idle_events.empty:
-        pdf.body_text("No idle events of 10+ minutes detected (or no GPS data available) for this vehicle.")
+        pdf.body_text(f"No idle events of 10+ minutes detected for this vehicle over the period.")
     else:
         total_idle_min = idle_events["duration_min"].sum()
         longest = idle_events.loc[idle_events["duration_min"].idxmax()]
+        days_with_idle = idle_events["date"].nunique()
+
+        pdf.body_text(
+            f"{len(idle_events)} idle event(s) of 10+ minutes across {days_with_idle} day(s), totaling "
+            f"{total_idle_min/60:,.1f} hours of engine-on, not-moving time. The longest single event was "
+            f"{longest['duration_min']:.0f} minutes on {longest['date']} (starting {longest['start'].strftime('%H:%M')})."
+        )
+
         pdf.kpi_row([
             ("TOTAL IDLE TIME", f"{total_idle_min/60:,.1f} hrs"),
             ("IDLE EVENTS", f"{len(idle_events)}"),
-            ("DAYS AFFECTED", f"{idle_events['date'].nunique()}"),
+            ("DAYS AFFECTED", f"{days_with_idle}"),
             ("LONGEST EVENT", f"{longest['duration_min']:.0f} min"),
         ])
+
+        daily_idle = idle_events.groupby("date")["duration_min"].sum().reset_index()
+        png_idle = render_idle_daily_chart_png(daily_idle["date"].astype(str).str[5:], daily_idle["duration_min"])
+        pdf.image_from_bytes(png_idle)
+
         rows = [[str(r["date"]), r["start"].strftime("%H:%M"), r["end"].strftime("%H:%M"), f"{r['duration_min']:.0f}"]
                 for _, r in idle_events.iterrows()]
         pdf.data_table(["Date", "Start", "End", "Duration (min)"], rows, col_widths=[45, 45, 45, 55])
@@ -732,7 +801,7 @@ def _pdf_to_bytes(pdf):
     return data
 
 
-def build_single_vehicle_pdf(plate, data, seg_df, pending_km, target_kml, tolerance_pct,
+def build_single_vehicle_pdf(plate, data, target_kml, tolerance_pct,
                               raw_df=None, idle_rate_lph=0.6, fuel_price=None):
     pdf = ReportPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
@@ -745,13 +814,13 @@ def build_single_vehicle_pdf(plate, data, seg_df, pending_km, target_kml, tolera
     pdf.cell(0, 6, pdf_safe(f"Period: {data['Date'].min()} to {data['Date'].max()}"), ln=True)
     pdf.ln(4)
 
-    build_vehicle_report_section(pdf, plate, data, seg_df, pending_km, target_kml, tolerance_pct,
+    build_vehicle_report_section(pdf, plate, data, target_kml, tolerance_pct,
                                   raw_df, idle_rate_lph, fuel_price)
     return _pdf_to_bytes(pdf)
 
 
 def build_fleet_pdf(vehicle_payloads):
-    """vehicle_payloads: list of dicts with keys plate, data, seg_df, pending_km, target_kml, tolerance_pct"""
+    """vehicle_payloads: list of dicts with keys plate, data, target_kml, tolerance_pct"""
     pdf = ReportPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
@@ -765,6 +834,8 @@ def build_fleet_pdf(vehicle_payloads):
 
     pdf.section_title("Fleet Overview")
     rows = []
+    chart_names, chart_lb, chart_gps, chart_savings = [], [], [], []
+    total_var_km_sum, total_idle_hrs_sum, total_savings_sum = 0.0, 0.0, 0.0
     for vp in vehicle_payloads:
         d = vp["data"]
         total_lb = d["Jumlah_Pemakaian"].sum()
@@ -773,7 +844,8 @@ def build_fleet_pdf(vehicle_payloads):
         var_km_val = (total_lb - total_gps) if total_gps is not None else None
         var = (var_km_val / total_lb) if var_km_val is not None and total_lb else None
         flagged = d["flag"].isin(["HIGH", "STANDBY", "NO-LOGBOOK"]).sum()
-        liters = vp["seg_df"]["liters"].sum() if vp["seg_df"] is not None and not vp["seg_df"].empty else None
+        fuel_overview = compute_fuel_overview(d, vp["target_kml"]) if d["Refuel_L"].fillna(0).sum() > 0 else None
+        liters = fuel_overview["total_liters"] if fuel_overview else None
 
         idle_evts = compute_idle_events(vp.get("raw_df"), 10, 1.0) if vp.get("raw_df") is not None else pd.DataFrame()
         idle_hrs = idle_evts["duration_min"].sum() / 60.0 if not idle_evts.empty else 0.0
@@ -792,15 +864,41 @@ def build_fleet_pdf(vehicle_payloads):
             f"{idle_hrs:.1f}",
             f"{savings['total_l']:.0f}",
         ])
+        chart_names.append(vp["plate"])
+        chart_lb.append(total_lb)
+        chart_gps.append(total_gps if total_gps is not None else 0)
+        chart_savings.append(savings["total_l"])
+        total_var_km_sum += abs(var_km_val) if var_km_val is not None else 0
+        total_idle_hrs_sum += idle_hrs
+        total_savings_sum += savings["total_l"]
+
     pdf.data_table(
         ["Vehicle", "Logbook KM", "GPS KM", "Variance", "Flagged", "Fuel (L)", "Idle Hrs", "Est. Save (L)"],
         rows, col_widths=[32, 24, 22, 22, 20, 22, 20, 26],
     )
 
+    pdf.ln(3)
+    fuel_price_any = next((vp.get("fuel_price") for vp in vehicle_payloads if vp.get("fuel_price")), None)
+    fleet_insight = (
+        f"Across {len(vehicle_payloads)} vehicle(s), total logbook-vs-GPS variance is {total_var_km_sum:,.0f} km "
+        f"and total idle time is {total_idle_hrs_sum:,.1f} hours. Estimated total recoverable fuel across the "
+        f"fleet: {total_savings_sum:,.0f} L"
+        + (f" (~{total_savings_sum*fuel_price_any:,.0f} at the given fuel price)" if fuel_price_any else "")
+        + " - combining the fuel implied by the distance gap (variance km / target km/L) and idle time "
+          "(idle hours x assumed burn rate). This is an estimate, not an audit finding; use it to prioritize "
+          "which vehicles to look at first."
+    )
+    pdf.body_text(fleet_insight)
+
+    png_var = render_fleet_bar_png(chart_names, chart_lb, chart_gps, "Logbook KM", "GPS KM", "KM")
+    pdf.image_from_bytes(png_var)
+    png_save = render_fleet_bar_png(chart_names, chart_savings, ylabel="Estimated liters")
+    pdf.image_from_bytes(png_save)
+
     for vp in vehicle_payloads:
         pdf.add_page()
         build_vehicle_report_section(
-            pdf, vp["plate"], vp["data"], vp["seg_df"], vp["pending_km"], vp["target_kml"], vp["tolerance_pct"],
+            pdf, vp["plate"], vp["data"], vp["target_kml"], vp["tolerance_pct"],
             vp.get("raw_df"), vp.get("idle_rate_lph", 0.6), vp.get("fuel_price"),
         )
 
@@ -832,12 +930,7 @@ if gps_files:
 
 vehicles = sorted(set(logbook_data.keys()) | set(gps_data.keys()))
 
-st.markdown(
-    f"<span style='color:{ACCENT}; font-family:monospace; font-size:12px; letter-spacing:.15em;'>"
-    "// TELEMETRY / RECONCILIATION CONSOLE</span>",
-    unsafe_allow_html=True,
-)
-st.title("🛰️ Fleet Logbook ↔ GPS Reconciliation")
+st.title("🛰️ Driver Logbook ↔ GPS Tracker")
 st.caption("Upload a driver logbook and one or more GPS history exports — vehicles are matched automatically by plate number.")
 
 if not vehicles:
@@ -886,8 +979,8 @@ c1.metric("📘 Logbook Total", f"{total_lb:,.0f} km")
 c2.metric("🛰️ GPS Total", f"{total_gps:,.0f} km" if total_gps is not None else "—")
 c3.metric(
     "📊 Overall Variance", f"{overall_var*100:,.1f}%" if overall_var is not None else "—",
-    delta="within tolerance" if overall_var is not None and abs(overall_var) <= 0.15 else ("check needed" if overall_var is not None else None),
-    delta_color="normal" if overall_var is not None and abs(overall_var) <= 0.15 else "inverse",
+    delta="within tolerance" if overall_var is not None and abs(overall_var) <= 0.10 else ("check needed" if overall_var is not None else None),
+    delta_color="normal" if overall_var is not None and abs(overall_var) <= 0.10 else "inverse",
 )
 c4.metric(
     "🚩 Flagged Days", f"{flagged} / {len(data)}",
@@ -917,19 +1010,22 @@ with tab1:
         fig1.add_bar(
             x=dates_str, y=data["Jumlah_Pemakaian"], name="Logbook KM", marker_color=ACCENT,
             text=data["Jumlah_Pemakaian"].apply(lambda v: f"{v:.0f}" if pd.notna(v) else ""), textposition="outside",
-            textfont=dict(size=11, color="#e7ecf0"),
+            textfont=dict(size=11, color=TEXT),
+            hovertemplate="Logbook: %{y:.0f} km<extra></extra>",
         )
         fig1.add_bar(
             x=dates_str, y=data["gps_km"], name="GPS KM", marker_color=CYAN,
             text=data["gps_km"].apply(lambda v: f"{v:.0f}" if pd.notna(v) else ""), textposition="outside",
-            textfont=dict(size=11, color="#e7ecf0"),
+            textfont=dict(size=11, color=TEXT),
+            hovertemplate="GPS: %{y:.1f} km<extra></extra>",
         )
 
-        var_pct_display = data["variance_pct"].apply(lambda v: v * 100 if pd.notna(v) else None)
+        var_pct_display = data["variance_pct"].apply(lambda v: abs(v) * 100 if pd.notna(v) else None)
         fig1.add_trace(go.Scatter(
             x=dates_str, y=var_pct_display, name="Variance %", mode="lines+markers",
             line=dict(color=AMBER, width=2), marker=dict(size=6),
             yaxis="y2", connectgaps=True,
+            hovertemplate="Variance: %{y:.1f}%<extra></extra>",
         ))
 
         # Annotate flagged days above their bars
@@ -943,15 +1039,16 @@ with tab1:
                 )
 
         fig1.update_layout(
-            barmode="group", template="plotly_dark",
+            barmode="group", template="plotly_white",
             paper_bgcolor=PANEL, plot_bgcolor=PANEL,
             legend=dict(orientation="h", y=1.15, font=dict(color=DIM)),
             margin=dict(l=10, r=10, t=30, b=10), height=420,
             xaxis=dict(gridcolor=GRID, type="category"), yaxis=dict(title="KM", gridcolor=GRID),
-            yaxis2=dict(title="Variance %", overlaying="y", side="right", ticksuffix="%", showgrid=False),
+            yaxis2=dict(title="Variance % (abs)", overlaying="y", side="right", ticksuffix="%", showgrid=False, rangemode="tozero"),
             hovermode="x unified",
         )
         st.plotly_chart(fig1, width="stretch")
+        st.caption("Note: Logbook KM x Variance % = the gap between Logbook and GPS, in km. To see which side is higher on a given day, compare the two bars directly.")
 
     with col2:
         st.markdown("**Flag distribution**")
@@ -960,11 +1057,11 @@ with tab1:
         fig2 = go.Figure(go.Pie(
             labels=[f"{FLAG_ICONS.get(k,'')} {k}" for k in counts.index], values=counts.values, hole=0.62,
             marker=dict(colors=[FLAG_COLORS.get(k, DIM) for k in counts.index], line=dict(color=PANEL, width=3)),
-            textinfo="value+percent", textfont=dict(color="#e7ecf0", size=12),
+            textinfo="value+percent", textfont=dict(color=TEXT, size=12),
         ))
-        fig2.add_annotation(text=f"{len(data)}<br>days", showarrow=False, font=dict(size=18, color="#e7ecf0"))
+        fig2.add_annotation(text=f"{len(data)}<br>days", showarrow=False, font=dict(size=18, color=TEXT))
         fig2.update_layout(
-            template="plotly_dark", paper_bgcolor=PANEL,
+            template="plotly_white", paper_bgcolor=PANEL,
             margin=dict(l=10, r=10, t=30, b=10), height=420,
             legend=dict(font=dict(color=DIM)),
         )
@@ -990,7 +1087,7 @@ with tab2:
                                yaxis="y2", connectgaps=True))
 
     fig3.update_layout(
-        template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+        template="plotly_white", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
         legend=dict(orientation="h", y=1.12, font=dict(color=DIM)),
         margin=dict(l=10, r=10, t=20, b=10), height=440,
         xaxis=dict(gridcolor=GRID, type="category"), yaxis=dict(title="Cumulative KM", gridcolor=GRID),
@@ -1013,7 +1110,7 @@ with tab3:
 
     display_df = table_df[["Date", "Tujuan", "Jumlah_Pemakaian", "gps_km", "variance_pct", "max_speed", "acc_on", "flag"]].copy()
     display_df.columns = ["Date", "Route", "Logbook KM", "GPS KM", "Variance", "Max Speed", "ACC-On Pings", "Flag"]
-    display_df["Variance"] = display_df["Variance"] * 100  # convert fraction to percentage points
+    display_df["Variance"] = pd.to_numeric(display_df["Variance"], errors="coerce").abs() * 100  # absolute value, as % points
     display_df["Flag"] = display_df["Flag"].apply(lambda f: f"{FLAG_ICONS.get(f,'')} {f}")
 
     st.dataframe(
@@ -1024,119 +1121,96 @@ with tab3:
             "Logbook KM": st.column_config.NumberColumn(format="%.0f km"),
             "GPS KM": st.column_config.NumberColumn(format="%.1f km"),
             "Variance": st.column_config.ProgressColumn(
-                format="%.0f%%", min_value=-100.0, max_value=100.0,
-                help="Logbook−GPS variance as a share of logbook KM",
+                format="%.0f%%", min_value=0.0, max_value=100.0,
+                help="|Logbook−GPS| as a share of logbook KM (always shown positive)",
             ),
             "Max Speed": st.column_config.NumberColumn(format="%.0f km/h"),
             "ACC-On Pings": st.column_config.NumberColumn(format="%d"),
         },
     )
-    st.caption(f"Showing {len(display_df)} of {len(data)} days.")
+    st.caption(f"Showing {len(display_df)} of {len(data)} days. Logbook KM x Variance % = the gap between Logbook and GPS, in km. Compare the KM columns directly to see which side is higher.")
 
 with tab4:
-    seg_df, pending_km = compute_fuel_segments(data)
+    total_lb = data["Jumlah_Pemakaian"].sum()
+    has_gps_rows = data["gps_km"].notna()
+    total_gps = data.loc[has_gps_rows, "gps_km"].sum() if has_gps_rows.any() else None
 
-    if seg_df.empty:
-        st.info("No refuel entries found in the logbook for this vehicle — nothing to analyze yet.")
+    if total_gps is None:
+        st.info("No GPS data matched for this vehicle yet — the fuel estimate needs a KM gap (Logbook vs GPS) to work from.")
     else:
-        total_liters = seg_df["liters"].sum()
-        total_km_lb = seg_df["km_logbook"].sum()
-        total_km_gps = seg_df["km_gps"].sum() if seg_df["km_gps"].notna().any() else None
-        overall_kml_lb = total_km_lb / total_liters if total_liters else None
-        overall_kml_gps = (total_km_gps / total_liters) if (total_km_gps and total_liters) else None
-        overall_kml_best = overall_kml_gps or overall_kml_lb
-
         st.markdown("**Set a target fuel efficiency for this vehicle**")
         st.caption("Defaults to 9.0 km/L for every vehicle — override it with the manufacturer-rated or fleet-standard km/L for this vehicle class if you have one.")
 
         target_key = f"target_kml_{plate}"
         if target_key not in st.session_state:
             st.session_state[target_key] = 9.0
-        tol_key = f"tolerance_{plate}"
-        if tol_key not in st.session_state:
-            st.session_state[tol_key] = 15
+        target_kml = st.number_input("Target km/L", min_value=1.0, max_value=50.0, step=0.5, key=target_key)
 
-        tcol1, tcol2 = st.columns([1, 2])
-        target_kml = tcol1.number_input("Target km/L", min_value=1.0, max_value=50.0, step=0.5, key=target_key)
-        tolerance_pct = tcol2.slider("Tolerance band (±%)", min_value=5, max_value=40, step=5, key=tol_key,
-                                       help="Cycles within this % of the target are considered normal")
-
-        tol = tolerance_pct / 100.0
-        seg_df = apply_fuel_targets(seg_df, target_kml, tolerance_pct)
-        below_count = (seg_df["fuel_flag"] == "BELOW TARGET").sum()
-        above_count = (seg_df["fuel_flag"] == "ABOVE TARGET").sum()
-
-        overall_vs_target = (overall_kml_best - target_kml) / target_kml if overall_kml_best else None
+        km_gap = total_lb - total_gps
+        est_savings_l = max(km_gap, 0) / target_kml if target_kml else 0.0
 
         st.markdown(
-            f"<div class='insight-box'>⛽ Across <b>{len(seg_df)} refuel cycle(s)</b> totaling "
-            f"<b>{total_liters:,.0f} L</b>, this vehicle averages <b>{overall_kml_best:,.1f} km/L</b> "
-            f"against a target of <b>{target_kml:.1f} km/L</b> "
-            f"({'above' if overall_vs_target and overall_vs_target > 0 else 'below'} target by {abs(overall_vs_target*100):,.0f}%). "
-            + (f"<b>{below_count} cycle(s)</b> fall more than {tolerance_pct}% below target — worth checking against fuel receipts. " if below_count else "No cycles fall meaningfully below target. ")
-            + (f"<b>{above_count} cycle(s)</b> run more than {tolerance_pct}% above target, which can mean genuinely efficient driving, a partial (not full) refuel, or under-reported distance." if above_count else "")
-            + (f" There's also <b>{pending_km:.0f} km</b> driven since the last refuel with no closing fill-up yet." if pending_km else "")
+            f"<div class='insight-box'>⛽ Simple estimate: the logbook-vs-GPS <b>KM gap</b> is <b>{km_gap:,.0f} km</b> "
+            f"({total_lb:,.0f} km logged vs {total_gps:,.0f} km GPS). At a target of <b>{target_kml:.1f} km/L</b>, "
+            f"that gap is worth roughly <b>{est_savings_l:,.0f} L</b> of fuel"
+            + (" — worth checking if that distance is being fueled but not actually driven." if km_gap > 0 else ", though GPS shows more distance than logged here, so there's no fuel implied by this gap.")
             + "</div>",
             unsafe_allow_html=True,
         )
-        st.caption("⚠️ Per-cycle figures still assume each refuel tops the tank to full — if fill-ups aren't always complete, individual cycles will be noisy. The overall average above (total km ÷ total liters) doesn't depend on that assumption and is the more reliable number.")
+        st.caption("Estimate = max(Logbook KM − GPS KM, 0) ÷ Target km/L. Simple and transparent — no refuel-cycle assumptions, no actual liters tracked, just what the distance gap would cost in fuel at your target efficiency.")
 
-        fc1, fc2, fc3 = st.columns(3)
-        fc1.metric("⛽ Total Refueled", f"{total_liters:,.0f} L")
-        fc2.metric(
-            "📏 Avg vs Target", f"{overall_kml_best:,.1f} km/L",
-            delta=f"{overall_vs_target*100:+.0f}% vs {target_kml:.1f} target" if overall_vs_target is not None else None,
-            delta_color="normal" if overall_vs_target is not None and overall_vs_target >= -tol else "inverse",
-        )
-        fc3.metric(
-            "🚩 Below Target", f"{below_count} / {len(seg_df)}",
-            delta="clean" if below_count == 0 else f"{below_count} to review",
-            delta_color="normal" if below_count == 0 else "inverse",
-        )
+        total_refuel_l = data["Refuel_L"].fillna(0).sum()
+
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        fc1.metric("⛽ Total Refueled", f"{total_refuel_l:,.0f} L")
+        fc2.metric("📏 KM Gap", f"{km_gap:,.0f} km")
+        fc3.metric("🎯 Target", f"{target_kml:.1f} km/L")
+        fc4.metric("💧 Est. Fuel Impact", f"{est_savings_l:,.0f} L")
 
         st.write("")
-        st.markdown("**Fuel efficiency per refuel cycle vs. target**")
-        st.caption("Bars = km/L per cycle (GPS-based where available, else logbook); dashed line = your target")
+        st.markdown("**Daily KM gap → fuel-equivalent**")
+        st.caption("Bars = each day's KM gap converted to liters at your target km/L; dashed line = the running cumulative total.")
 
-        kml_col = "kml_gps" if seg_df["kml_gps"].notna().any() else "kml_logbook"
-        flag_bar_colors = {"BELOW TARGET": RED, "ABOVE TARGET": AMBER, "OK": CYAN}
-        bar_colors = [flag_bar_colors[f] for f in seg_df["fuel_flag"]]
+        daily_gap_km = (data["Jumlah_Pemakaian"] - data["gps_km"]).clip(lower=0)
+        daily_gap_l = daily_gap_km / target_kml if target_kml else daily_gap_km * 0
+        cum_gap_l = daily_gap_l.cumsum()
+        dates_str_fuel = data["Date"].astype(str).str[5:]
 
         fig4 = go.Figure()
         fig4.add_bar(
-            x=seg_df["period"], y=seg_df[kml_col], marker_color=bar_colors,
-            text=seg_df[kml_col].apply(lambda v: f"{v:.1f}"), textposition="outside",
-            textfont=dict(size=11, color="#e7ecf0"), name="km/L",
+            x=dates_str_fuel, y=daily_gap_l, name="Daily fuel-equivalent gap", marker_color=ACCENT,
+            text=daily_gap_l.apply(lambda v: f"{v:.1f}" if pd.notna(v) else ""), textposition="outside",
+            textfont=dict(size=11, color=TEXT),
         )
-        fig4.add_hline(y=target_kml, line_dash="dash", line_color="#e7ecf0",
-                        annotation_text=f"target {target_kml:.1f} km/L", annotation_font_color="#e7ecf0")
+        fig4.add_trace(go.Scatter(x=dates_str_fuel, y=cum_gap_l, name="Cumulative (L)",
+                                   mode="lines+markers", line=dict(color=CYAN, width=2, dash="dash"),
+                                   yaxis="y2"))
         fig4.update_layout(
-            template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
-            margin=dict(l=10, r=10, t=20, b=10), height=380, showlegend=False,
-            xaxis=dict(gridcolor=GRID, title="Refuel cycle", type="category"), yaxis=dict(gridcolor=GRID, title="km/L"),
+            template="plotly_white", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+            legend=dict(orientation="h", y=1.15, font=dict(color=DIM)),
+            margin=dict(l=10, r=10, t=30, b=10), height=420,
+            xaxis=dict(gridcolor=GRID, type="category"), yaxis=dict(title="Daily fuel-equivalent (L)", gridcolor=GRID),
+            yaxis2=dict(title="Cumulative (L)", overlaying="y", side="right", showgrid=False),
+            hovermode="x unified",
         )
         st.plotly_chart(fig4, width="stretch")
 
         st.write("")
-        st.markdown("**Refuel cycle detail**")
-        seg_display = seg_df[["period", "liters", "km_logbook", "km_gps", "kml_logbook", "kml_gps", "deviation_pct", "fuel_flag"]].copy()
-        seg_display.columns = ["Period", "Liters", "Logbook KM", "GPS KM", "km/L (Logbook)", "km/L (GPS)", "vs Target", "Flag"]
-        seg_display["vs Target"] = seg_display["vs Target"] * 100
-        flag_icon = {"BELOW TARGET": "🔻", "ABOVE TARGET": "🔺", "OK": "✅"}
-        seg_display["Flag"] = seg_display["Flag"].apply(lambda f: f"{flag_icon[f]} {f}")
+        st.markdown("**Daily detail**")
+        fuel_display = pd.DataFrame({
+            "Date": data["Date"], "Logbook KM": data["Jumlah_Pemakaian"], "GPS KM": data["gps_km"],
+            "KM Gap": daily_gap_km, "Fuel-Equivalent (L)": daily_gap_l, "Cumulative (L)": cum_gap_l,
+        })
         st.dataframe(
-            seg_display, width="stretch", hide_index=True,
+            fuel_display, width="stretch", hide_index=True,
             column_config={
-                "Liters": st.column_config.NumberColumn(format="%.0f L"),
                 "Logbook KM": st.column_config.NumberColumn(format="%.0f km"),
                 "GPS KM": st.column_config.NumberColumn(format="%.1f km"),
-                "km/L (Logbook)": st.column_config.NumberColumn(format="%.1f"),
-                "km/L (GPS)": st.column_config.NumberColumn(format="%.1f"),
-                "vs Target": st.column_config.NumberColumn(format="%+.0f%%"),
+                "KM Gap": st.column_config.NumberColumn(format="%.1f km"),
+                "Fuel-Equivalent (L)": st.column_config.NumberColumn(format="%.1f L"),
+                "Cumulative (L)": st.column_config.NumberColumn(format="%.1f L"),
             },
         )
-        if pending_km:
-            st.caption(f"Not shown: {pending_km:.0f} km driven since the last refuel, awaiting a closing fill-up.")
 
 with tab5:
     st.markdown("**Idle time detection**")
@@ -1193,10 +1267,10 @@ with tab5:
                 x=daily_idle["date"].astype(str).str[5:], y=daily_idle["duration_min"],
                 marker_color=AMBER,
                 text=daily_idle["duration_min"].apply(lambda v: f"{v:.0f}"), textposition="outside",
-                textfont=dict(size=11, color="#e7ecf0"),
+                textfont=dict(size=11, color=TEXT),
             )
             fig5.update_layout(
-                template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+                template="plotly_white", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
                 margin=dict(l=10, r=10, t=20, b=10), height=340, showlegend=False,
                 xaxis=dict(gridcolor=GRID, type="category"), yaxis=dict(gridcolor=GRID, title="Idle minutes"),
             )
@@ -1221,9 +1295,9 @@ with tab6:
     fleet_price_key = "fleet_fuel_price"
     fleet_idle_rate_key = "fleet_idle_rate"
     if fleet_price_key not in st.session_state:
-        st.session_state[fleet_price_key] = 0.0
+        st.session_state[fleet_price_key] = 16000.0
     if fleet_idle_rate_key not in st.session_state:
-        st.session_state[fleet_idle_rate_key] = 0.6
+        st.session_state[fleet_idle_rate_key] = 1.0
 
     fp1, fp2 = st.columns(2)
     fuel_price = fp1.number_input(
@@ -1244,10 +1318,10 @@ with tab6:
             v_gps = gps_data.get(v)
             v_raw = gps_raw_data.get(v)
             v_data = compute_reconciliation(v_lb, v_gps)
-            v_seg, v_pending = compute_fuel_segments(v_data)
             v_target = st.session_state.get(f"target_kml_{v}", 9.0)
-            v_tol = st.session_state.get(f"tolerance_{v}", 15)
-            v_seg = apply_fuel_targets(v_seg, v_target, v_tol)
+
+            v_fuel = compute_fuel_overview(v_data, v_target) if v_data["Refuel_L"].fillna(0).sum() > 0 else None
+            avg_kml = v_fuel["avg_kml"] if v_fuel else None
 
             v_idle_events = compute_idle_events(v_raw, 10, 1.0) if v_raw is not None else pd.DataFrame()
             v_idle_min = v_idle_events["duration_min"].sum() if not v_idle_events.empty else 0.0
@@ -1257,7 +1331,6 @@ with tab6:
             total_gps = v_data.loc[has_gps_rows, "gps_km"].sum() if has_gps_rows.any() else None
             var_km = (total_lb - total_gps) if total_gps is not None else None
             var_pct = (var_km / total_lb) if var_km is not None and total_lb else None
-            avg_kml = (v_seg["km_gps"].fillna(v_seg["km_logbook"]).sum() / v_seg["liters"].sum()) if not v_seg.empty else None
 
             v_savings = compute_savings_estimate(v_target, v_idle_min, idle_rate, fuel_price or None, var_km)
 
@@ -1307,12 +1380,12 @@ with tab6:
         fig6 = go.Figure()
         fig6.add_bar(x=overview_df["Vehicle"], y=overview_df["Logbook KM"], name="Logbook KM", marker_color=ACCENT,
                      text=overview_df["Logbook KM"].apply(lambda v: f"{v:.0f}"), textposition="outside",
-                     textfont=dict(size=11, color="#e7ecf0"))
+                     textfont=dict(size=11, color=TEXT))
         fig6.add_bar(x=overview_df["Vehicle"], y=overview_df["GPS KM"], name="GPS KM", marker_color=CYAN,
                      text=overview_df["GPS KM"].apply(lambda v: f"{v:.0f}" if pd.notna(v) else ""), textposition="outside",
-                     textfont=dict(size=11, color="#e7ecf0"))
+                     textfont=dict(size=11, color=TEXT))
         fig6.update_layout(
-            barmode="group", template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+            barmode="group", template="plotly_white", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
             legend=dict(orientation="h", y=1.15, font=dict(color=DIM)),
             margin=dict(l=10, r=10, t=30, b=10), height=380,
             xaxis=dict(gridcolor=GRID, type="category"), yaxis=dict(gridcolor=GRID, title="KM"),
@@ -1324,9 +1397,9 @@ with tab6:
         fig7 = go.Figure()
         fig7.add_bar(x=overview_df["Vehicle"], y=overview_df["Est. Savings (L)"], marker_color=AMBER,
                      text=overview_df["Est. Savings (L)"].apply(lambda v: f"{v:.0f}"), textposition="outside",
-                     textfont=dict(size=11, color="#e7ecf0"))
+                     textfont=dict(size=11, color=TEXT))
         fig7.update_layout(
-            template="plotly_dark", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
+            template="plotly_white", paper_bgcolor=PANEL, plot_bgcolor=PANEL,
             margin=dict(l=10, r=10, t=20, b=10), height=340, showlegend=False,
             xaxis=dict(gridcolor=GRID, type="category"), yaxis=dict(gridcolor=GRID, title="Estimated liters"),
         )
@@ -1356,13 +1429,8 @@ with tab7:
 
     this_target_key = f"target_kml_{plate}"
     this_tol_key = f"tolerance_{plate}"
-    this_seg_df, this_pending_km = compute_fuel_segments(data)
-    if not this_seg_df.empty:
-        default_target = st.session_state.get(this_target_key, 9.0)
-        default_tol = st.session_state.get(this_tol_key, 15)
-        this_seg_df = apply_fuel_targets(this_seg_df, default_target, default_tol)
-    else:
-        default_target, default_tol = 9.0, 15
+    default_target = st.session_state.get(this_target_key, 9.0)
+    default_tol = st.session_state.get(this_tol_key, 15)
 
     report_idle_rate = st.session_state.get("fleet_idle_rate", 0.6)
     report_fuel_price = st.session_state.get("fleet_fuel_price", 0.0) or None
@@ -1371,7 +1439,7 @@ with tab7:
         try:
             with st.spinner("Building PDF..."):
                 pdf_bytes = build_single_vehicle_pdf(
-                    plate, data, this_seg_df, this_pending_km, default_target, default_tol,
+                    plate, data, default_target, default_tol,
                     gps_raw_df, report_idle_rate, report_fuel_price,
                 )
             st.download_button(
@@ -1397,13 +1465,11 @@ with tab7:
                     v_gps = gps_data.get(v)
                     v_raw = gps_raw_data.get(v)
                     v_data = compute_reconciliation(v_lb, v_gps)
-                    v_seg, v_pending = compute_fuel_segments(v_data)
                     v_target = st.session_state.get(f"target_kml_{v}", 9.0)
                     v_tol = st.session_state.get(f"tolerance_{v}", 15)
-                    v_seg = apply_fuel_targets(v_seg, v_target, v_tol)
                     payloads.append({
-                        "plate": v, "data": v_data, "seg_df": v_seg,
-                        "pending_km": v_pending, "target_kml": v_target, "tolerance_pct": v_tol,
+                        "plate": v, "data": v_data,
+                        "target_kml": v_target, "tolerance_pct": v_tol,
                         "raw_df": v_raw, "idle_rate_lph": report_idle_rate, "fuel_price": report_fuel_price,
                     })
                 fleet_pdf_bytes = build_fleet_pdf(payloads)
