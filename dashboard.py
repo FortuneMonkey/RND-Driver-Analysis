@@ -1,14 +1,3 @@
-"""
-Fleet Logbook <-> GPS Reconciliation Dashboard (Streamlit)
------------------------------------------------------------
-Run locally with:
-    pip install streamlit pandas openpyxl plotly
-    streamlit run fleet_dashboard_streamlit.py
-
-Upload your logbook workbook (one sheet per vehicle) and one or more GPS
-history exports. Vehicles are matched automatically by plate number.
-"""
-
 import re
 import io
 import os
@@ -757,8 +746,8 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tole
         f"for a total estimate of {savings['total_l']:,.0f} L."
     )
     if fuel_price:
-        savings_line += f" At the given fuel price, that's approximately {savings.get('total_cost', 0):,.0f}."
-    savings_line += " This is a rough prioritization estimate based on the assumptions above, not a precise audit figure."
+        savings_line += f" At the given fuel price, that's approximately Rp.{savings.get('total_cost', 0):,.0f}."
+    savings_line += " This is only estimation based on the assumptions above."
     pdf.body_text(savings_line)
 
 
@@ -1359,7 +1348,7 @@ with tab6:
             f"<div class='insight-box'>🚚 Across <b>{len(overview_df)} vehicle(s)</b>, total logbook-vs-GPS variance "
             f"is <b>{total_var_km:,.0f} km</b> and total idle time is <b>{total_idle_hrs:,.1f} hours</b>. "
             f"Estimated total recoverable fuel across the fleet: <b>{total_savings_l:,.0f} L</b>"
-            + (f" (~{total_savings_l*fuel_price:,.0f} at your fuel price)" if fuel_price else "")
+            + (f" (~ Rp.{total_savings_l*fuel_price:,.0f} at your fuel price)" if fuel_price else "")
             + " — combining the fuel implied by the distance gap (variance km / target km/L) and idle time "
               "(idle hours x assumed burn rate). This is an estimate, not an audit finding; use it to prioritize "
               "which vehicles to look at first.</div>"
@@ -1372,7 +1361,7 @@ with tab6:
         fo3.metric("⏱️ Total Idle Time", f"{total_idle_hrs:,.1f} hrs")
         fo4.metric(
             "💧 Est. Total Savings", f"{total_savings_l:,.0f} L",
-            delta=f"~{total_savings_l*fuel_price:,.0f} at set price" if fuel_price else None,
+            delta=f"~Rp.{total_savings_l*fuel_price:,.0f} at set price" if fuel_price else None,
         )
 
         st.write("")
