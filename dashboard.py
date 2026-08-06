@@ -1,15 +1,3 @@
-"""
-RND Driver Analysis — Fleet Logbook vs GPS Reconciliation Dashboard
-
-Main entry point. Run with:
-    streamlit run dashboard.py
-
-This file handles page setup, file upload, the sidebar (vehicle picker +
-configuration), and the tab layout. All the actual computation, parsing, and
-PDF-building logic lives in the modules/ package — see modules/reconciliation.py,
-modules/parsing.py, modules/pdf_report.py, and modules/theme.py.
-"""
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -50,10 +38,10 @@ if gps_files:
         gps_data.update(parsed)
         gps_raw_data.update(raw_parsed)
 
-if logbook_files:
-    st.sidebar.success(f"{len(logbook_files)} file(s) -> {len(logbook_data)} vehicle(s) loaded", icon="📘")
-if gps_files:
-    st.sidebar.success(f"{len(gps_files)} GPS file(s) loaded", icon="🛰️")
+# if logbook_files:
+#     st.sidebar.success(f"{len(logbook_files)} file(s) -> {len(logbook_data)} vehicle(s) loaded", icon="📘")
+# if gps_files:
+#     st.sidebar.success(f"{len(gps_files)} GPS file(s) loaded", icon="🛰️")
 
 vehicles = sorted(set(logbook_data.keys()) | set(gps_data.keys()))
 
