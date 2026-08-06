@@ -1,3 +1,15 @@
+"""
+RND Driver Analysis — Fleet Logbook vs GPS Reconciliation Dashboard
+
+Main entry point. Run with:
+    streamlit run dashboard.py
+
+This file handles page setup, file upload, the sidebar (vehicle picker +
+configuration), and the tab layout. All the actual computation, parsing, and
+PDF-building logic lives in the modules/ package — see modules/reconciliation.py,
+modules/parsing.py, modules/pdf_report.py, and modules/theme.py.
+"""
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -18,12 +30,18 @@ apply_theme()
 # Sidebar — data in
 # ---------------------------------------------------------------------------
 st.sidebar.markdown("### 📥 Data In")
-logbook_file = st.sidebar.file_uploader("Logbook workbook (one sheet per vehicle)", type=["xlsx", "xls"])
+logbook_files = st.sidebar.file_uploader(
+    "Logbook workbook(s) — Excel with one sheet per vehicle, or one CSV per vehicle",
+    type=["xlsx", "xls", "csv"], accept_multiple_files=True,
+)
 gps_files = st.sidebar.file_uploader(
-    "GPS history export(s) — select multiple", type=["xlsx", "xls"], accept_multiple_files=True
+    "GPS history export(s) — select multiple", type=["xlsx", "xls", "csv"], accept_multiple_files=True
 )
 
-logbook_data = parse_logbook(logbook_file) if logbook_file else {}
+logbook_data = {}
+if logbook_files:
+    for f in logbook_files:
+        logbook_data.update(parse_logbook(f))
 gps_data = {}
 gps_raw_data = {}
 if gps_files:
@@ -32,10 +50,10 @@ if gps_files:
         gps_data.update(parsed)
         gps_raw_data.update(raw_parsed)
 
-# if logbook_file:
-#     st.sidebar.success(f"{len(logbook_data)} vehicle sheet(s) loaded", icon="📘")
-# if gps_files:
-#     st.sidebar.success(f"{len(gps_files)} GPS file(s) loaded", icon="🛰️")
+if logbook_files:
+    st.sidebar.success(f"{len(logbook_files)} file(s) -> {len(logbook_data)} vehicle(s) loaded", icon="📘")
+if gps_files:
+    st.sidebar.success(f"{len(gps_files)} GPS file(s) loaded", icon="🛰️")
 
 vehicles = sorted(set(logbook_data.keys()) | set(gps_data.keys()))
 
