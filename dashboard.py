@@ -158,7 +158,7 @@ with tab1:
 
     with col1:
         st.markdown("**Logbook vs. GPS distance per day**")
-        st.caption("Bars show the exact KM reported by each source; amber line = variance % (right axis), drawn continuously through standby days. Days with more than a 10 km gap between Logbook and GPS are marked ⚠️ / 🚩 above the bars.")
+        st.caption(f"Bars show the exact KM reported by each source; amber line = variance % (right axis), drawn continuously through standby days. Days with more than a {flag_threshold_km:.0f} km gap between Logbook and GPS are marked ⚠️ / 🚩 above the bars.")
 
         fig1 = go.Figure()
         fig1.add_bar(
@@ -267,10 +267,12 @@ with tab3:
     display_df["Variance"] = pd.to_numeric(display_df["Variance"], errors="coerce").abs() * 100  # absolute value, as % points
     display_df["Flag"] = display_df["Flag"].apply(lambda f: f"{FLAG_ICONS.get(f,'')} {f}")
 
-    st.dataframe(
+    detail_event = st.dataframe(
         display_df,
         width="stretch",
         hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Logbook KM": st.column_config.NumberColumn(format="%.0f km"),
             "GPS KM": st.column_config.NumberColumn(format="%.1f km"),
@@ -282,7 +284,29 @@ with tab3:
             "ACC-On Pings": st.column_config.NumberColumn(format="%d"),
         },
     )
-    st.caption(f"Showing {len(display_df)} of {len(data)} days. Logbook KM x Variance % = the gap between Logbook and GPS, in km. Compare the KM columns directly to see which side is higher. Days flagged HIGH have a gap of more than 10 km.")
+    st.caption(f"Showing {len(display_df)} of {len(data)} days. Logbook KM x Variance % = the gap between Logbook and GPS, in km. Compare the KM columns directly to see which side is higher. Days flagged HIGH have a gap of more than {flag_threshold_km:.0f} km.")
+
+    # Per-row raw GPS ping download — click a row above, then download only
+    # that day's raw pings (not the whole vehicle's GPS history).
+    selected_rows = detail_event["selection"]["rows"] if detail_event and detail_event["selection"] else []
+    if selected_rows:
+        sel_date = table_df.iloc[selected_rows[0]]["Date"]
+        if gps_raw_df is not None:
+            day_pings = gps_raw_df[gps_raw_df["GPS Time"].dt.date == sel_date]
+            if not day_pings.empty:
+                st.download_button(
+                    f"⬇ Download raw GPS pings for {sel_date} ({len(day_pings)} pings)",
+                    data=day_pings.to_csv(index=False).encode("utf-8"),
+                    file_name=f"{plate.replace(' ', '_')}_{sel_date}_gps_pings.csv",
+                    mime="text/csv",
+                    key=f"dl_detail_{plate}_{sel_date}",
+                )
+            else:
+                st.caption(f"No raw GPS pings recorded for {sel_date}.")
+        else:
+            st.caption("No raw GPS data available for this vehicle to download.")
+    else:
+        st.caption("💡 Click a row above to download that day's raw GPS pings only.")
 
 with tab4:
     total_lb = data["Jumlah_Pemakaian"].sum()
@@ -416,10 +440,36 @@ with tab5:
             idle_display["end"] = idle_display["end"].dt.strftime("%H:%M")
             idle_display = idle_display[["date", "start", "end", "duration_min"]]
             idle_display.columns = ["Date", "Start", "End", "Duration (min)"]
-            st.dataframe(
+            idle_event = st.dataframe(
                 idle_display, width="stretch", hide_index=True,
+                on_select="rerun", selection_mode="single-row",
                 column_config={"Duration (min)": st.column_config.NumberColumn(format="%.0f min")},
             )
+
+            # Per-row raw GPS ping download — click an idle event above, then
+            # download only the raw pings that fall inside that event's time window.
+            idle_selected_rows = idle_event["selection"]["rows"] if idle_event and idle_event["selection"] else []
+            if idle_selected_rows:
+                ev = idle_events.iloc[idle_selected_rows[0]]
+                if gps_raw_df is not None:
+                    event_pings = gps_raw_df[
+                        (gps_raw_df["GPS Time"] >= ev["start"]) & (gps_raw_df["GPS Time"] <= ev["end"])
+                    ]
+                    if not event_pings.empty:
+                        st.download_button(
+                            f"⬇ Download raw GPS pings for {ev['start'].strftime('%Y-%m-%d %H:%M')}–{ev['end'].strftime('%H:%M')} "
+                            f"({len(event_pings)} pings)",
+                            data=event_pings.to_csv(index=False).encode("utf-8"),
+                            file_name=f"{plate.replace(' ', '_')}_{ev['start'].strftime('%Y%m%d_%H%M')}_idle_gps_pings.csv",
+                            mime="text/csv",
+                            key=f"dl_idle_{plate}_{idle_selected_rows[0]}",
+                        )
+                    else:
+                        st.caption("No raw GPS pings found in this event's exact time window.")
+                else:
+                    st.caption("No raw GPS data available for this vehicle to download.")
+            else:
+                st.caption("💡 Click an idle event above to download the raw GPS pings for that time window only.")
 
 with tab6:
     st.markdown("**Fleet-wide comparison**")
@@ -440,7 +490,8 @@ with tab6:
             v_fuel = compute_fuel_overview(v_data, v_target) if v_data["Refuel_L"].fillna(0).sum() > 0 else None
             avg_kml = v_fuel["avg_kml"] if v_fuel else None
 
-            v_idle_events = compute_idle_events(v_raw, 10, 1.0) if v_raw is not None else pd.DataFrame()
+            v_idle_threshold = st.session_state.get(f"idle_threshold_{v}", 10)
+            v_idle_events = compute_idle_events(v_raw, v_idle_threshold, 1.0) if v_raw is not None else pd.DataFrame()
             v_idle_min = v_idle_events["duration_min"].sum() if not v_idle_events.empty else 0.0
 
             total_lb = v_data["Jumlah_Pemakaian"].sum()
@@ -555,7 +606,7 @@ with tab7:
             with st.spinner("Building PDF..."):
                 pdf_bytes = build_single_vehicle_pdf(
                     plate, data, default_target, default_tol,
-                    gps_raw_df, report_idle_rate, report_fuel_price,
+                    gps_raw_df, report_idle_rate, report_fuel_price, idle_threshold_min,
                 )
             st.download_button(
                 "⬇ Download vehicle report (PDF)", data=pdf_bytes,
@@ -583,10 +634,12 @@ with tab7:
                     v_data = compute_reconciliation(v_lb, v_gps, v_flag_threshold)
                     v_target = st.session_state.get(f"target_kml_{v}", 9.0)
                     v_tol = st.session_state.get(f"tolerance_{v}", 15)
+                    v_idle_threshold = st.session_state.get(f"idle_threshold_{v}", 10)
                     payloads.append({
                         "plate": v, "data": v_data,
                         "target_kml": v_target, "tolerance_pct": v_tol,
                         "raw_df": v_raw, "idle_rate_lph": report_idle_rate, "fuel_price": report_fuel_price,
+                        "idle_threshold_min": v_idle_threshold,
                     })
                 fleet_pdf_bytes = build_fleet_pdf(payloads)
             st.download_button(

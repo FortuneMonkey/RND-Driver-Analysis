@@ -304,7 +304,7 @@ class ReportPDF(FPDF):
 
 
 def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tolerance_pct,
-                                  raw_df=None, idle_rate_lph=0.6, fuel_price=None):
+                                  raw_df=None, idle_rate_lph=0.6, fuel_price=None, idle_threshold_min=10):
     dates_str = data["Date"].astype(str)
     total_lb = data["Jumlah_Pemakaian"].sum()
     has_gps_rows = data["gps_km"].notna()
@@ -384,7 +384,7 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tole
         pdf.image_from_bytes(png3)
         pdf.body_text("Estimate = max(Logbook KM - GPS KM, 0) / Target km/L. No refuel-cycle assumptions, no actual liters tracked - just what the distance gap would cost in fuel at the target efficiency.")
 
-    idle_events = compute_idle_events(raw_df, 10, 1.0) if raw_df is not None else pd.DataFrame()
+    idle_events = compute_idle_events(raw_df, idle_threshold_min, 1.0) if raw_df is not None else pd.DataFrame()
     variance_km_val = (total_lb - total_gps) if total_gps is not None else None
     savings = compute_savings_estimate(
         target_kml,
@@ -396,14 +396,14 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tole
     pdf.section_title(f"{plate} — Idle Time & Savings Estimate")
 
     if idle_events.empty:
-        pdf.body_text(f"No idle events of 10+ minutes detected for this vehicle over the period.")
+        pdf.body_text(f"No idle events of {idle_threshold_min}+ minutes detected for this vehicle over the period.")
     else:
         total_idle_min = idle_events["duration_min"].sum()
         longest = idle_events.loc[idle_events["duration_min"].idxmax()]
         days_with_idle = idle_events["date"].nunique()
 
         pdf.body_text(
-            f"{len(idle_events)} idle event(s) of 10+ minutes across {days_with_idle} day(s), totaling "
+            f"{len(idle_events)} idle event(s) of {idle_threshold_min}+ minutes across {days_with_idle} day(s), totaling "
             f"{total_idle_min/60:,.1f} hours of engine-on, not-moving time. The longest single event was "
             f"{longest['duration_min']:.0f} minutes on {longest['date']} (starting {longest['start'].strftime('%H:%M')})."
         )
@@ -468,7 +468,7 @@ def _pdf_to_bytes(pdf):
 
 
 def build_single_vehicle_pdf(plate, data, target_kml, tolerance_pct,
-                              raw_df=None, idle_rate_lph=0.6, fuel_price=None):
+                              raw_df=None, idle_rate_lph=0.6, fuel_price=None, idle_threshold_min=10):
     pdf = ReportPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
@@ -481,7 +481,7 @@ def build_single_vehicle_pdf(plate, data, target_kml, tolerance_pct,
     pdf.ln(4)
 
     build_vehicle_report_section(pdf, plate, data, target_kml, tolerance_pct,
-                                  raw_df, idle_rate_lph, fuel_price)
+                                  raw_df, idle_rate_lph, fuel_price, idle_threshold_min)
     return _pdf_to_bytes(pdf)
 
 
@@ -513,7 +513,8 @@ def build_fleet_pdf(vehicle_payloads):
         fuel_overview = compute_fuel_overview(d, vp["target_kml"]) if d["Refuel_L"].fillna(0).sum() > 0 else None
         liters = fuel_overview["total_liters"] if fuel_overview else None
 
-        idle_evts = compute_idle_events(vp.get("raw_df"), 10, 1.0) if vp.get("raw_df") is not None else pd.DataFrame()
+        vp_idle_threshold = vp.get("idle_threshold_min", 10)
+        idle_evts = compute_idle_events(vp.get("raw_df"), vp_idle_threshold, 1.0) if vp.get("raw_df") is not None else pd.DataFrame()
         idle_hrs = idle_evts["duration_min"].sum() / 60.0 if not idle_evts.empty else 0.0
         savings = compute_savings_estimate(
             vp["target_kml"], idle_evts["duration_min"].sum() if not idle_evts.empty else 0.0,
@@ -566,8 +567,7 @@ def build_fleet_pdf(vehicle_payloads):
         build_vehicle_report_section(
             pdf, vp["plate"], vp["data"], vp["target_kml"], vp["tolerance_pct"],
             vp.get("raw_df"), vp.get("idle_rate_lph", 0.6), vp.get("fuel_price"),
+            vp.get("idle_threshold_min", 10),
         )
 
     return _pdf_to_bytes(pdf)
-
-

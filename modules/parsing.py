@@ -132,6 +132,17 @@ def parse_gps(file_bytes):
     df["GPS Time"] = pd.to_datetime(df["GPS Time"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
     df["Date"] = df["GPS Time"].dt.date
 
+    # Some GPS exports include an address/location column (name varies by
+    # tracker platform, e.g. "Location", "Location(Get All Locations)").
+    # Detect it by name rather than assuming an exact header, and normalize
+    # it to a plain "Location" column so downstream code has one name to rely on.
+    loc_col = next((c for c in df.columns if "location" in str(c).lower()), None)
+    if loc_col is not None and loc_col != "Location":
+        df["Location"] = df[loc_col]
+    raw_cols = ["GPS Time", "Speed (Km/hr)", "ACC", "Mileage(KM)"]
+    if "Location" in df.columns:
+        raw_cols.append("Location")
+
     out = {}
     raw_out = {}
     for plate, g in df.groupby("Plate"):
@@ -144,5 +155,5 @@ def parse_gps(file_bytes):
             pings=("Mileage(KM)", "count"),
         ).reset_index()
         out[plate] = daily
-        raw_out[plate] = g[["GPS Time", "Speed (Km/hr)", "ACC", "Mileage(KM)"]].sort_values("GPS Time").reset_index(drop=True)
+        raw_out[plate] = g[raw_cols].sort_values("GPS Time").reset_index(drop=True)
     return out, raw_out
