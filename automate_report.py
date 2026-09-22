@@ -5,13 +5,7 @@ import sys
 import tempfile
 import datetime as dt
 
-# parse_logbook/parse_gps are decorated with @st.cache_data. Outside a running
-# Streamlit app, its hasher tries to fingerprint file-like objects by opening
-# their `.name` attribute as a real path on disk -- which breaks here, since
-# we set `.name` on an in-memory BytesIO just for extension detection, not
-# because it points to a file in the script's working directory. There's no
-# benefit to caching in a one-shot script anyway, so disable it before the
-# decorated functions are imported.
+
 import streamlit as st
 
 
@@ -55,7 +49,8 @@ DEFAULT_CONFIG = {
 EMAIL_CONFIG = {
     "enabled": True,          # set False to skip the email step entirely
     "send": True,            # False = open as a draft in Outlook for review; True = send immediately
-    "to": ["Betty_AndrianySirait@aprilasia.com", "kira_theresa@aprilasia.com", "Muhamar_Prayogi@aprilasia.com", "Husni_Mubarok@aprilasia.com", "Sahat_Manimbo@globalnetlcl.com", "Halimah_Tanjung@globalnetlcl.com", "jessika_sembiring@globalnetlcl.com"],   # TODO: real recipients
+    "to": ["Betty_AndrianySirait@aprilasia.com", "kira_theresa@aprilasia.com", "Muhamar_Prayogi@aprilasia.com", "Husni_Mubarok@aprilasia.com", 
+           "Sahat_Manimbo@globalnetlcl.com", "Halimah_Tanjung@globalnetlcl.com", "jessika_sembiring@globalnetlcl.com"],   # TODO: real recipients
     "cc": ["Srikumar@aprilasia.com", "muhammad_yuliarto@aprilasia.com", "iswandi@aprilasia.com", "susanna_chitraresmi@aprilasia.com", "Alvaro_Duran@aprilasia.com", "sabar_siregar@aprilasia.com"],
     "subject_template": "R&D Vehicle Report - {month_name} {year}",
 }

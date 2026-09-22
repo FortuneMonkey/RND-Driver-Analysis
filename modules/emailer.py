@@ -1,14 +1,3 @@
-"""
-emailer.py
-----------
-Sends the fleet report through the desktop Outlook client via COM automation
-(no SMTP credentials needed -- it drives whatever Outlook profile is already
-signed in on the machine). Requires: pip install pywin32
-
-By default `send=False`, which opens the finished email as a draft
-(`.Display()`) so you can eyeball it before anything goes out. Flip to
-`send=True` (or pass it in) once you're happy with the recipients/body/etc.
-"""
 import os
 
 import win32com.client as win32

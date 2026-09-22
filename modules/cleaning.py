@@ -1,19 +1,3 @@
-"""
-cleaning.py
------------
-Turns a raw monthly logbook workbook into the same "clean" shape you've been
-producing by hand: sheets narrowed down to the vehicles you care about, `No`
-renumbered from 1, and zero-usage days (Day Off / Standby / blank "-" rows)
-carrying the previous day's ending KM forward instead of dropping to 0.
-
-What this does NOT do: it can't recreate a one-off manual correction to a
-KM reading that was simply wrong in the source (that happened in one of your
-reference sheets independently of the Day Off/Standby pattern). It only
-reproduces the mechanical rule — anything beyond that still needs a human.
-
-Drop this file next to parsing.py / reconciliation.py / pdf_report.py /
-theme.py inside your `modules/` package.
-"""
 import re
 import datetime as dt
 
