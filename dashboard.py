@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from modules.theme import apply_theme, ACCENT, CYAN, AMBER, DIM, GRID, PANEL, TEXT, FLAG_COLORS, FLAG_ICONS
-from modules.parsing import parse_logbook, parse_gps
+from modules.parsing import parse_logbook, parse_gps, compute_avg_moving_speed
 from modules.reconciliation import (
     compute_reconciliation, compute_fuel_overview, compute_idle_events,
     compute_savings_estimate, build_insight,
@@ -12,6 +12,25 @@ from modules.pdf_report import build_single_vehicle_pdf, build_fleet_pdf
 
 st.set_page_config(page_title="RND Driver Analysis", layout="wide", page_icon="🛰️")
 apply_theme()
+
+# Force every KPI (st.metric) box to the same size, whether or not it shows a
+# delta line underneath. Content is top-aligned so labels/values line up across boxes.
+st.markdown(
+    """
+    <style>
+    div[data-testid="stMetric"] {
+        height: 120px !important;
+        min-height: 120px !important;
+        box-sizing: border-box;
+        display: flex !important;
+        flex-direction: column;
+        justify-content: flex-start;
+        overflow: hidden;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +103,7 @@ idle_threshold_key = f"idle_threshold_{plate}"
 st.session_state.setdefault(flag_threshold_key, 10)
 st.session_state.setdefault(target_key, 9.0)
 st.session_state.setdefault(idle_threshold_key, 10)
-st.session_state.setdefault("fleet_fuel_price", 16000.0)
+st.session_state.setdefault("fleet_fuel_price", 20000.0)
 st.session_state.setdefault("fleet_idle_rate", 1.0)
 
 st.sidebar.caption(f"For **{plate}**")
@@ -123,12 +142,14 @@ total_gps = data.loc[has_gps_rows, "gps_km"].sum() if has_gps_rows.any() else No
 overall_var = (total_lb - total_gps) / total_lb if total_gps is not None and total_lb > 0 else None
 flagged = (data["flag"].isin(["HIGH", "STANDBY", "NO-LOGBOOK"])).sum()
 max_speed = data["max_speed"].max() if data["max_speed"].notna().any() else None
+AVG_SPEED_MIN = 20.0  # only pings at or above this speed (km/h) count toward the average
+avg_speed = compute_avg_moving_speed(gps_raw_df, AVG_SPEED_MIN, dates=data["Date"])
 
 st.subheader(f"📋 {plate}")
 
 st.markdown(f"<div class='insight-box'>💡 {build_insight(data, total_lb, total_gps, overall_var, flagged)}</div>", unsafe_allow_html=True)
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 c1.metric("📘 Logbook Total", f"{total_lb:,.0f} km")
 c2.metric("🛰️ GPS Total", f"{total_gps:,.0f} km" if total_gps is not None else "—")
 c3.metric(
@@ -142,6 +163,10 @@ c4.metric(
     delta_color="normal" if flagged == 0 else "inverse",
 )
 c5.metric("⚡ Max Speed", f"{max_speed:,.0f} km/h" if max_speed is not None else "—")
+c6.metric(
+    "🏁 Avg Speed (≥20)", f"{avg_speed:,.0f} km/h" if avg_speed is not None else "—",
+    help=f"Average of all GPS pings at or above {AVG_SPEED_MIN:.0f} km/h (slower pings are excluded).",
+)
 
 st.write("")
 

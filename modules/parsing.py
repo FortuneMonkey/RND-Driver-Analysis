@@ -157,3 +157,20 @@ def parse_gps(file_bytes):
         out[plate] = daily
         raw_out[plate] = g[raw_cols].sort_values("GPS Time").reset_index(drop=True)
     return out, raw_out
+
+
+def compute_avg_moving_speed(raw_df, min_speed=20.0, dates=None):
+    """
+    Average speed (km/h) over raw GPS pings, counting only pings at or above
+    `min_speed` (default 20 km/h) so parked / crawling / GPS-jitter pings don't
+    drag the average down. Optionally restrict to a collection of dates.
+    Returns None if there is no usable data.
+    """
+    if raw_df is None or raw_df.empty or "Speed (Km/hr)" not in raw_df.columns:
+        return None
+    df = raw_df
+    if dates is not None:
+        df = df[df["GPS Time"].dt.date.isin(set(dates))]
+    speeds = pd.to_numeric(df["Speed (Km/hr)"], errors="coerce")
+    speeds = speeds[speeds >= min_speed]
+    return float(speeds.mean()) if not speeds.empty else None

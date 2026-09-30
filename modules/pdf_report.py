@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from fpdf import FPDF
 
+from modules.parsing import compute_avg_moving_speed
 from modules.theme import ACCENT, CYAN, AMBER, GREEN, RED, DIM, GRID
 from modules.reconciliation import (
     build_insight, compute_idle_events, compute_savings_estimate, compute_fuel_overview,
@@ -312,6 +313,7 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tole
     overall_var = (total_lb - total_gps) / total_lb if total_gps is not None and total_lb > 0 else None
     flagged = data["flag"].isin(["HIGH", "STANDBY", "NO-LOGBOOK"]).sum()
     max_speed = data["max_speed"].max() if data["max_speed"].notna().any() else None
+    avg_speed = compute_avg_moving_speed(raw_df, 20.0, dates=data["Date"])
 
     pdf.section_title(f"Vehicle: {plate}")
     pdf.kpi_row([
@@ -320,6 +322,7 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tole
         ("VARIANCE", f"{overall_var*100:,.1f}%" if overall_var is not None else "-"),
         ("FLAGGED DAYS", f"{flagged} / {len(data)}"),
         ("MAX SPEED", f"{max_speed:,.0f} km/h" if max_speed is not None else "-"),
+        ("AVG SPEED (20+)", f"{avg_speed:,.0f} km/h" if avg_speed is not None else "-"),
     ])
 
     pdf.body_text(strip_html(build_insight(data, total_lb, total_gps, overall_var, flagged)))
@@ -435,7 +438,10 @@ def build_vehicle_report_section(pdf: "ReportPDF", plate, data, target_kml, tole
         f"for a total estimate of {savings['total_l']:,.0f} L."
     )
     if fuel_price:
-        savings_line += f" At the given fuel price, that's approximately Rp.{savings.get('total_cost', 0):,.0f}."
+        savings_line += (
+            f" At the given fuel price of Rp.{fuel_price:,.0f} per liter, "
+            f"that's approximately Rp.{savings.get('total_cost', 0):,.0f}."
+        )
     savings_line += " This is only estimation based on the assumptions above."
     pdf.body_text(savings_line)
 
@@ -550,7 +556,7 @@ def build_fleet_pdf(vehicle_payloads):
         f"Across {len(vehicle_payloads)} vehicle(s), total logbook-vs-GPS variance is {total_var_km_sum:,.0f} km "
         f"and total idle time is {total_idle_hrs_sum:,.1f} hours. Estimated total recoverable fuel across the "
         f"fleet: {total_savings_sum:,.0f} L"
-        + (f" (~{total_savings_sum*fuel_price_any:,.0f} at the given fuel price)" if fuel_price_any else "")
+        + (f" (~Rp.{total_savings_sum*fuel_price_any:,.0f} at the given fuel price of Rp.{fuel_price_any:,.0f} per liter)" if fuel_price_any else "")
         + " - combining the fuel implied by the distance gap (variance km / target km/L) and idle time "
           "(idle hours x assumed burn rate). This is an estimate, not an audit finding; use it to prioritize "
           "which vehicles to look at first."

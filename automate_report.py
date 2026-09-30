@@ -42,7 +42,7 @@ DEFAULT_CONFIG = {
     "target_kml": 9.0,
     "idle_threshold_min": 10,
     "tolerance_pct": 15,
-    "fuel_price": 16000.0,
+    "fuel_price": 20000.0,
     "idle_rate_lph": 1.0,
 }
 
