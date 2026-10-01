@@ -15,7 +15,7 @@ def build_placeholder_body(period_label, screenshot_cid):
     return f"""
     <html><body style="font-family:Segoe UI, Arial, sans-serif; font-size:13px; color:#1F2328;">
         <p>Dear all,</p>
-        <p>This is the report for fleet reconciliation run for
+        <p>This is the <b>Automated Monthly Report</b> for fleet reconciliation run for
         <b>{period_label}</b>. </p>
         <p>Please find attached the latest full report and per-vehicle PDFs for your review.</p>
         <p><img src="cid:{screenshot_cid}" style="width:200px; border:1px solid #ccc;"></p>

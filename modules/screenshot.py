@@ -1,4 +1,4 @@
-import fitz  # PyMuPDF
+import pymupdf as fitz  # "fitz" is the old import name; pymupdf is the same package going forward
 
 
 def render_pdf_page(pdf_path, out_png_path, page_number=0, dpi=150):
