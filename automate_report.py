@@ -48,7 +48,7 @@ DEFAULT_CONFIG = {
 
 EMAIL_CONFIG = {
     "enabled": True,          # set False to skip the email step entirely
-    "send": False,            # False = open as a draft in Outlook for review; True = send immediately
+    "send": True,            # False = open as a draft in Outlook for review; True = send immediately
     "to": ["Betty_AndrianySirait@aprilasia.com", "kira_theresa@aprilasia.com", "Muhamar_Prayogi@aprilasia.com", "Husni_Mubarok@aprilasia.com", 
            "Sahat_Manimbo@globalnetlcl.com", "Halimah_Tanjung@globalnetlcl.com", "jessika_sembiring@globalnetlcl.com"],   # TODO: real recipients
     "cc": ["Srikumar@aprilasia.com", "muhammad_yuliarto@aprilasia.com", "iswandi@aprilasia.com", "susanna_chitraresmi@aprilasia.com", "Alvaro_Duran@aprilasia.com", "sabar_siregar@aprilasia.com"],

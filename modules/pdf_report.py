@@ -516,6 +516,8 @@ def build_fleet_pdf(vehicle_payloads):
         var_km_val = (total_lb - total_gps) if total_gps is not None else None
         var = (var_km_val / total_lb) if var_km_val is not None and total_lb else None
         flagged = d["flag"].isin(["HIGH", "STANDBY", "NO-LOGBOOK"]).sum()
+        top_speed = d["max_speed"].max() if d["max_speed"].notna().any() else None
+        avg_speed = compute_avg_moving_speed(vp.get("raw_df"), 20.0, dates=d["Date"])
         fuel_overview = compute_fuel_overview(d, vp["target_kml"]) if d["Refuel_L"].fillna(0).sum() > 0 else None
         liters = fuel_overview["total_liters"] if fuel_overview else None
 
@@ -533,6 +535,8 @@ def build_fleet_pdf(vehicle_payloads):
             f"{total_gps:,.0f}" if total_gps is not None else "-",
             f"{var*100:.1f}%" if var is not None else "-",
             f"{flagged}/{len(d)}",
+            f"{top_speed:,.0f}" if top_speed is not None and pd.notna(top_speed) else "-",
+            f"{avg_speed:,.0f}" if avg_speed is not None else "-",
             f"{liters:,.0f}" if liters is not None else "-",
             f"{idle_hrs:.1f}",
             f"{savings['total_l']:.0f}",
@@ -546,8 +550,8 @@ def build_fleet_pdf(vehicle_payloads):
         total_savings_sum += savings["total_l"]
 
     pdf.data_table(
-        ["Vehicle", "Logbook KM", "GPS KM", "Variance", "Flagged", "Fuel (L)", "Idle Hrs", "Est. Save (L)"],
-        rows, col_widths=[32, 24, 22, 22, 20, 22, 20, 26],
+        ["Vehicle", "Logbook KM", "GPS KM", "Variance", "Flagged", "Top km/h", "Avg km/h", "Fuel (L)", "Idle Hrs", "Est. Save (L)"],
+        rows, col_widths=[30, 20, 18, 18, 15, 17, 17, 15, 15, 25],
     )
 
     pdf.ln(3)
